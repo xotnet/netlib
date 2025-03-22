@@ -20,8 +20,8 @@ int32_t listen_net(const char* ip, const char* port, const uint8_t protocol /* 0
 	if (protocol == 0) {listener = socket(AF_INET, SOCK_STREAM, 0);}
 	else if (protocol == 1) {listener = socket(AF_INET, SOCK_DGRAM, 0);}
 	else {return -1;}
-	const uint8_t enable = 1;
-	setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, (int8_t*)&enable, sizeof(uint8_t));
+	const int8_t enable = 1;
+	setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(uint8_t));
 	struct sockaddr_in addr;
 	addr.sin_family = AF_INET;
 	addr.sin_port = htons(atoi(port));

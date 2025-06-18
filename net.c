@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+// Based on RFC1035 nov 1987
+
 void itos(int32_t N, char* str);
 
 // RETURN VALUE
@@ -119,16 +121,16 @@ enum dnsType {dnsANY, dnsA = 1, dnsNS, dnsMD, dnsMF, dnsCNAME, dnsSOA, dnsMB, dn
 int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
 	int32_t conn = connect_net(dnsIP, "53", 1);
 	char buf[512];
-	memset(buf, 0, 512);
-	buf[0] = 0xa3 ^ domain[0];
+	memset(buf, 0, 512); // HEADER
+	buf[0] = 0xa3 ^ domain[0]; // 16 bit ID of DNS program
 	buf[1] = 0x23 ^ domain[0];
-	buf[2] = 0x01; // get request
+	buf[2] = 0b00000001; // query | Recursion Available | 
 	buf[5] = 0x01; // QDCOUNT
 
-	uint8_t domainLen = strlen(domain);
+	uint8_t domainLen = strlen(domain); // RDATA LENGTH 16 bit
 	char qname[domainLen+2]; // len byte + domain + 0x00
 	uint8_t octetCounter = 0;
-	for (int16_t i = domainLen-1; i>= 0; i--) {
+	for (int16_t i = domainLen-1; i>= 0; i--) { // RDATA
 		if (domain[i] == '.') {
 			qname[i+1] = 0x00 + octetCounter;
 			octetCounter = 0;
@@ -142,9 +144,8 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
 	strcpy(buf+12, qname);
 
 	uint8_t typePos = 12+domainLen+2; // header + domain + octetCounter + \0
-	buf[typePos] = (unsigned char)(nsType >> 8);
-	buf[typePos+1] = (unsigned char)(nsType & 0xFF);
-	//buf[typePos+2] = 0x00;
+	buf[typePos] = (nsType >> 8) & 0xFF;
+	buf[typePos+1] = nsType & 0xFF;
 	buf[typePos+3] = 0x01;
 	send_net(conn, buf, typePos+4);
 	memset(buf, 0, 512);
@@ -152,12 +153,13 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
 		strcpy(output, "Net error");
 		return -1;
 	}
-	uint16_t answerCount = (buf[6] << 8) | (buf[7]);
+	uint16_t answerCount = (buf[6] << 8) | (buf[7]); // 4 and 5 bytes from HEADER
 	if (answerCount == 0) { // no results
 		strcpy(output, "No results");
 		return -2;
 	}
-	uint16_t answStart = 12 + domainLen+2 + 4; // header(12) + QName + QTYPEQCLASS(4)
+	uint16_t answStart = 12 + domainLen + 2 + 4; // header(12) + QName + QTYPEQCLASS(4)
+	output[0] = 0;
 	for (uint8_t i = 0; i<answerCount; i++) {
 		// answStart + 0  | 2b NAME pointer
 		// answStart + 2  | 2b Dns type
@@ -167,12 +169,16 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
 		// answStart + 12 | xb RDATA
 		uint16_t rdatalen = (buf[answStart+10] << 8) | (buf[answStart+11]) - 1;
 		uint16_t outputLen = strlen(output);
-		uint8_t addSpace = 0;
-		if (outputLen != 0) {addSpace = 1;}
+		if (outputLen != 0) {output[outputLen] = ' '; outputLen++;}
 		if (nsType == dnsA) { // A
-			char ipbytes[4];
-			strcpy(ipbytes, buf+answStart+12);
-			inet_ntop(AF_INET, ipbytes, output+outputLen+addSpace, 15);
+			if ((buf[answStart+2] << 8 | (buf[answStart+3]) == nsType)) {
+				char ipbytes[4];
+				ipbytes[0] = buf[answStart+12];
+				ipbytes[1] = buf[answStart+13];
+				ipbytes[2] = buf[answStart+14];
+				ipbytes[3] = buf[answStart+15];
+				inet_ntop(AF_INET, ipbytes, output+outputLen, INET_ADDRSTRLEN);
+			}
 		} else if (nsType == dnsCAA) { // CAA
 			itos(buf[answStart+12], output); // flags
 			uint32_t outputInd = strlen(output);
@@ -208,7 +214,6 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
 			itos((buf[answStart+16] << 8) | (buf[answStart+17] & 0xFF), output+outputInd+1); // port
 			outputInd = strlen(output);
 			output[outputInd] = ' ';
-			// xxxx2eu3com3org0
 			outputInd++;
 			uint8_t lblLen = buf[answStart+18];
 			int32_t i=0;
@@ -227,11 +232,10 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
 			for (; e<rdatalen; e++) {
 				char rdata[rdatalen];
 				rdata[e] = buf[answStart+13+e];
-				strcpy(output+outputLen+addSpace, rdata);
+				strcpy(output+outputLen, rdata);
 			}
-			output[e] = 0;
 		}
-		answStart = answStart+rdatalen+12;
+		answStart += domainLen+12+rdatalen+3;
 		i++;
 	}
 	close_net(conn);

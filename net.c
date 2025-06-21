@@ -144,7 +144,7 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
 	strcpy(buf+12, qname);
 
 	uint8_t typePos = 12+domainLen+2; // header + domain + octetCounter + \0
-	buf[typePos] = (nsType >> 8) & 0xFF;
+	buf[typePos] = (nsType >> 8) & 0xFF; // set type
 	buf[typePos+1] = nsType & 0xFF;
 	buf[typePos+3] = 0x01;
 	send_net(conn, buf, typePos+4);
@@ -158,25 +158,26 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
 		strcpy(output, "No results");
 		return -2;
 	}
-	uint16_t answStart = 12 + domainLen + 2 + 4; // header(12) + QName + QTYPEQCLASS(4)
 	output[0] = 0;
-	for (uint8_t i = 0; i<answerCount; i++) {
+	uint16_t answStart = 12 + domainLen + 2 + 4; // header(12) + QName + QTYPEQCLASS(4)
+	for (uint8_t v = 0; v<answerCount; v++) {
 		// answStart + 0  | 2b NAME pointer
 		// answStart + 2  | 2b Dns type
 		// answStart + 4  | 2b Class
 		// answStart + 6  | 4b TTL
 		// answStart + 10 | 2b RDATA len
 		// answStart + 12 | xb RDATA
-		uint16_t rdatalen = (buf[answStart+10] << 8) | (buf[answStart+11]) - 1;
+		uint16_t rdatalen = (buf[answStart+10] << 8) | (buf[answStart+11]);
 		uint16_t outputLen = strlen(output);
-		if (outputLen != 0) {output[outputLen] = ' '; outputLen++;}
+		if (outputLen != 0) {output[outputLen] = ' '; outputLen++; output[outputLen] = 0;}
 		if (nsType == dnsA) { // A
 			if ((buf[answStart+2] << 8 | (buf[answStart+3]) == nsType)) {
-				char ipbytes[4];
-				ipbytes[0] = buf[answStart+12];
-				ipbytes[1] = buf[answStart+13];
-				ipbytes[2] = buf[answStart+14];
-				ipbytes[3] = buf[answStart+15];
+				char ipbytes[5] = "";
+				uint16_t ipIndex = answStart+12;
+				ipbytes[0] = buf[ipIndex];
+				ipbytes[1] = buf[ipIndex+1];
+				ipbytes[2] = buf[ipIndex+2];
+				ipbytes[3] = buf[ipIndex+3];
 				inet_ntop(AF_INET, ipbytes, output+outputLen, INET_ADDRSTRLEN);
 			}
 		} else if (nsType == dnsCAA) { // CAA
@@ -229,14 +230,14 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
 			}
 		} else { // TXT, CNAME...
 			uint16_t e = 0;
+			char rdata[rdatalen+1];
 			for (; e<rdatalen; e++) {
-				char rdata[rdatalen];
 				rdata[e] = buf[answStart+13+e];
-				strcpy(output+outputLen, rdata);
 			}
+			rdata[rdatalen-1] = 0;
+			strcpy(output+outputLen, rdata);
 		}
-		answStart += domainLen+12+rdatalen+3;
-		i++;
+		answStart += 12+rdatalen;
 	}
 	close_net(conn);
 	return 0;

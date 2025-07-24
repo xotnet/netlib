@@ -4,14 +4,14 @@ C/C++ multiplatform network(TCP/UDP) lib for server and client
 
 ## FUNCTIONS
 
-**listen_net**(char* ip, char* port, uint8_t protocol ***0 - TCP | 1 - UDP***)
-> int server = listen_net("0.0.0.0", "1234", 0) - Create a TCP listener at 0.0.0.0:1234 
+**listen_net**(char* ip, char* port, int options)
+> int server = listen_net("0.0.0.0", "1234", setTCP | setIPv4) - Create a TCP listener at 0.0.0.0:1234 
 
 **accept_net**(listener)
 > int client = accept_net(server)
 
-**connect_net**(char* ip, char* port, uint8_t protocol ***0 - TCP | 1 - UDP***)
-> int socket = connect_net("1.1.1.1", "53", 1) - UDP connect to 1.1.1.1:53
+**connect_net**(char* ip, char* port, int options)
+> int socket = connect_net("1.1.1.1", "53", setUDP | setIPv4) - UDP connect to 1.1.1.1:53
 
 **send_net**(int socket, char* buf, int bufSize)
 > int sentBytes = send_net(socket, "Hello!", 6)
@@ -33,3 +33,4 @@ C/C++ multiplatform network(TCP/UDP) lib for server and client
 
 >Avaiable nsTypes - dnsANY(only if the type is not known!), dnsA, dnsNS, dnsMD, dnsMF, dnsCNAME, dnsSOA, dnsMB, dnsMG, dnsMR, dnsMX, dnsTXT, dnsRP, dnsAFSDB, dnsAAAA, dnsLOC, dnsSRV, dnsHTTPS, dnsSPF, dnsCAA
 
+>Avaiable options - setTCP, setUDP, setIPv4, setIPv6

@@ -1,3 +1,6 @@
+#ifndef NET_XOTNET_LIB_H
+#define NET_XOTNET_LIB_H
+
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
@@ -12,7 +15,7 @@
 // Based on RFC1035 nov 1987
 
 enum options{setTCP=0x000F, setUDP=0x00F0, setIPv4=0x0F00, setIPv6=0xF000};
-void itos(int32_t N, char* str);
+static void itos(int32_t N, char* str);
 
 // RETURN VALUE
 // int listener
@@ -146,10 +149,10 @@ uint8_t socks5_connect(int32_t sock, const char *ip, uint16_t port) {
     }
     return 0;
 }
+#include <stdio.h>
 char dnsIP[16] = "1.1.1.1";
 enum dnsType {dnsANY, dnsA = 1, dnsNS, dnsMD, dnsMF, dnsCNAME, dnsSOA, dnsMB, dnsMG, dnsMR, dnsMX=15, dnsTXT=16, dnsRP, dnsAFSDB, dnsAAAA=28, dnsLOC, dnsSRV=33, dnsHTTPS=65, dnsSPF=99, dnsCAA=257};
 int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
-    int32_t conn = connect_net(dnsIP, "53", setUDP | setIPv4);
     char buf[512];
     memset(buf, 0, 512); // HEADER
     buf[0] = 0xa3 ^ domain[0]; // 16 bit ID of DNS program
@@ -173,19 +176,40 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
     qname[domainLen+1] = 0;
     strcpy(buf+12, qname);
 
-    uint8_t typePos = 12+domainLen+2; // header + domain + octetCounter + \0
+    uint16_t typePos = 12+domainLen+2; // header + domain + octetCounter + \0
     buf[typePos] = (nsType >> 8) & 0xFF; // set type
     buf[typePos+1] = nsType & 0xFF;
     buf[typePos+3] = 0x01;
-    send_net(conn, buf, typePos+4);
-    memset(buf, 0, 512);
-    if (recv_net(conn, buf, 512) < domainLen) { // net error
-        strcpy(output, "Net error");
-        return -1;
+    int32_t conn = -1;
+    uint8_t maxDnsServerReconnect = 2;
+    for (uint8_t i = 0; i<maxDnsServerReconnect; ++i) { // x attempts
+        conn = connect_net(dnsIP, "53", setUDP | setIPv4);
+        
+        // set recv timeout
+        #ifdef _WIN32
+        DWORD timeout = 1500; // milliseconds
+        setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof timeout);
+        #else
+        struct timeval tv;
+        tv.tv_sec = 1; // seconds
+        tv.tv_usec = 500; // milliseconds
+        setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+        #endif
+
+        send_net(conn, buf, typePos+4);
+        memset(buf, 0, 512);
+        if (recv_net(conn, buf, 512) < domainLen) { // net error while receiving a response
+            if (i == 0) strcpy(output, "Net error");
+            close_net(conn);
+            if (i == maxDnsServerReconnect - 1) return -1;
+        } else {
+            break;
+        }
     }
     uint16_t answerCount = (buf[6] << 8) | (buf[7]); // 4 and 5 bytes from HEADER
     if (answerCount == 0) { // no results
         strcpy(output, "No results");
+        close_net(conn);
         return -2;
     }
     output[0] = 0;
@@ -277,6 +301,18 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
                 output[outputInd+i] = '.';
                 i++;
             }
+        } else if (nsType == dnsCNAME) { // CNAME
+            uint16_t outputInd = strlen(output);
+            int i = 0, j = 0;
+            while (buf[answStart+12+i] != 0) {
+                int length = buf[answStart+12+i];
+                i++;
+                for (int k = 0; k < length; k++) {
+                    output[outputInd+(j++)] = buf[answStart+12+(i++)];
+                }
+                output[outputInd+(j++)] = '.';
+            }
+            output[outputInd+j-1] = 0;
         } else { // TXT, CNAME...
             uint16_t e = 0;
             char rdata[rdatalen+1];
@@ -292,7 +328,7 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
     return 0;
 }
 
-void itos(int32_t N, char* str) {
+static void itos(int32_t N, char* str) {
     int32_t isNegative = 0;
     if (N < 0) {
         isNegative = 1;
@@ -313,3 +349,5 @@ void itos(int32_t N, char* str) {
         str[index - i - 1] = temp;
     }
 }
+
+#endif

@@ -34,3 +34,5 @@ C/C++ multiplatform network(TCP/UDP) lib for server and client
 >Avaiable nsTypes - dnsANY(only if the type is not known!), dnsA, dnsNS, dnsMD, dnsMF, dnsCNAME, dnsSOA, dnsMB, dnsMG, dnsMR, dnsMX, dnsTXT, dnsRP, dnsAFSDB, dnsAAAA, dnsLOC, dnsSRV, dnsHTTPS, dnsSPF, dnsCAA
 
 >Avaiable options - setTCP, setUDP, setIPv4, setIPv6
+
+>Multiple DNS records are separated using ;

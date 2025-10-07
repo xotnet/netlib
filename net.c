@@ -181,7 +181,7 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
     buf[typePos+1] = nsType & 0xFF;
     buf[typePos+3] = 0x01;
     int32_t conn = -1;
-    uint8_t maxDnsServerReconnect = 2;
+    uint8_t maxDnsServerReconnect = 5;
     for (uint8_t i = 0; i<maxDnsServerReconnect; ++i) { // x attempts
         conn = connect_net(dnsIP, "53", setUDP | setIPv4);
         
@@ -198,8 +198,10 @@ int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
 
         send_net(conn, buf, typePos+4);
         memset(buf, 0, 512);
-        if (recv_net(conn, buf, 512) < domainLen) { // net error while receiving a response
-            if (i == 0) strcpy(output, "Net error");
+        if (recv_net(conn, buf, 512) < 1) { // net error while receiving a response
+            if (i == 0) {
+                strcpy(output, "Net error");
+            }
             close_net(conn);
             if (i == maxDnsServerReconnect - 1) return -1;
         } else {

@@ -7,8 +7,8 @@ C/C++ multiplatform network(TCP/UDP) lib for server and client
 **listen_net**(char* ip, char* port, int options)
 > int server = listen_net("0.0.0.0", "1234", setTCP | setIPv4) - Create a TCP listener at 0.0.0.0:1234 
 
-**accept_net**(listener)
-> int client = accept_net(server)
+**accept_net**(int listener, char* clientIpStorage)
+> int client = accept_net(server) - Accept client connection, if clientIpStorage != NULL save client's ip
 
 **connect_net**(char* ip, char* port, int options)
 > int socket = connect_net("1.1.1.1", "53", setUDP | setIPv4) - UDP connect to 1.1.1.1:53
@@ -33,6 +33,6 @@ C/C++ multiplatform network(TCP/UDP) lib for server and client
 
 >Avaiable nsTypes - dnsANY(only if the type is not known!), dnsA, dnsNS, dnsMD, dnsMF, dnsCNAME, dnsSOA, dnsMB, dnsMG, dnsMR, dnsMX, dnsTXT, dnsRP, dnsAFSDB, dnsAAAA, dnsLOC, dnsSRV, dnsHTTPS, dnsSPF, dnsCAA
 
->Avaiable options - setTCP, setUDP, setIPv4, setIPv6
+>Avaiable options - setTCP, setUDP, setIPv4, setIPv6, setNonBlocking
 
 >Multiple DNS records are separated using ;

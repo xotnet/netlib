@@ -11,10 +11,11 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 // Based on RFC1035 nov 1987
 
-enum options{setTCP=0x000F, setUDP=0x00F0, setIPv4=0x0F00, setIPv6=0xF000};
+enum options{setTCP=0b00000001, setUDP=0b00000010, setIPv4=0b00000100, setIPv6=0b00001000, setNonBlocking=0b00010000};
 static void itos(int32_t N, char* str);
 
 // RETURN VALUE
@@ -53,11 +54,30 @@ int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
         if (bind(listener, (struct sockaddr*)&addr, sizeof(addr)) == -1) {return -3;}
     }
     if (listen(listener, SOMAXCONN) == -1) {return -4;}
+    if ((setNonBlocking & opt) == setNonBlocking) {
+        #ifdef _WIN32
+            unsigned long mode = 1;
+            ioctlsocket(listener, FIONBIO, &mode);
+        #else
+            fcntl(listener, F_SETFL, fcntl(listener, F_GETFL, 0) | O_NONBLOCK);
+        #endif
+    }
     return listener;
 }
 
-int32_t accept_net(int32_t listener) {
-    return accept(listener, 0, 0);
+int32_t accept_net(int32_t listener, char* clientIpStorage /*NULL or fill field with ipv4|ipv6 adress*/) {
+    struct sockaddr addr;
+    int len = sizeof(addr);
+    int result = accept(listener, &addr, &len);
+
+    if (clientIpStorage != NULL) {
+        if (addr.sa_family == AF_INET) {
+            inet_ntop(AF_INET, &((struct sockaddr_in*)&addr)->sin_addr, clientIpStorage, INET_ADDRSTRLEN);
+        } else {
+            inet_ntop(AF_INET6, &((struct sockaddr_in6*)&addr)->sin6_addr, clientIpStorage, INET6_ADDRSTRLEN);
+        }
+    }
+    return result;
 }
 
 // RETURN VALUE

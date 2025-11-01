@@ -36,8 +36,8 @@ int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
     else if ((setUDP & opt) == setUDP) {listener = socket(family, SOCK_DGRAM, 0);}
     else {return -1;}
     if (listener == -1) {return -2;}
-    int8_t enable = 1;
-    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(uint8_t));
+    int enable = 1;
+    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable));
     if ((opt & setIPv6) == setIPv6) { // v6
         struct sockaddr_in6 addr;
         addr.sin6_family = AF_INET6;
@@ -67,7 +67,7 @@ int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
 
 int32_t accept_net(int32_t listener, char* clientIpStorage /*NULL or fill field with ipv4|ipv6 adress*/) {
     struct sockaddr addr;
-    int len = sizeof(addr);
+    unsigned int len = sizeof(addr);
     int result = accept(listener, &addr, &len);
 
     if (clientIpStorage != NULL) {

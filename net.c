@@ -65,10 +65,11 @@ int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
     return listener;
 }
 
-int32_t accept_net(int32_t listener, char* clientIpStorage /*NULL or fill field with ipv4|ipv6 adress*/) {
+int32_t accept_net(int32_t listener, char* clientIpStorage /*NULL or fill field with ipv4|ipv6 adress*/, int nonBlockFlag /* 0 - if blocking 1 - if non*/) {
     struct sockaddr addr;
     unsigned int len = sizeof(addr);
-    int result = accept(listener, &addr, &len);
+    int flag = nonBlockFlag != 0 ? O_NONBLOCK : 0;
+    int result = accept4(listener, &addr, &len, flag);
 
     if (clientIpStorage != NULL) {
         if (addr.sa_family == AF_INET) {
@@ -172,7 +173,7 @@ uint8_t socks5_connect(int32_t sock, const char *ip, uint16_t port) {
 
 char dnsIP[16] = "1.1.1.1";
 enum dnsType {dnsANY, dnsA = 1, dnsNS, dnsMD, dnsMF, dnsCNAME, dnsSOA, dnsMB, dnsMG, dnsMR, dnsMX=15, dnsTXT=16, dnsRP, dnsAFSDB, dnsAAAA=28, dnsLOC, dnsSRV=33, dnsHTTPS=65, dnsSPF=99, dnsCAA=257};
-int8_t resolve_net(char* domain, char* output, uint16_t nsType) {
+int8_t resolve_net(const char* domain, char* output, uint16_t nsType) {
     char buf[512];
     memset(buf, 0, 512); // HEADER
     buf[0] = 0xa3 ^ domain[0]; // 16 bit ID of DNS program

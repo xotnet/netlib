@@ -37,7 +37,7 @@ int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
     else {return -1;}
     if (listener == -1) {return -2;}
     int enable = 1;
-    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable));
+    setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&enable, sizeof(enable));
     if ((opt & setIPv6) == setIPv6) { // v6
         struct sockaddr_in6 addr;
         addr.sin6_family = AF_INET6;
@@ -68,8 +68,12 @@ int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
 int32_t accept_net(int32_t listener, char* clientIpStorage /*NULL or fill field with ipv4|ipv6 adress*/, int nonBlockFlag /* 0 - if blocking 1 - if non*/) {
     struct sockaddr addr;
     unsigned int len = sizeof(addr);
+    #ifndef __WIN32
     int flag = nonBlockFlag != 0 ? O_NONBLOCK : 0;
     int result = accept4(listener, &addr, &len, flag);
+    #else
+    int result = accept(listener, &addr, (int*)&len);
+    #endif
 
     if (clientIpStorage != NULL) {
         if (addr.sa_family == AF_INET) {

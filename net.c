@@ -68,11 +68,11 @@ int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
 int32_t accept_net(int32_t listener, char* clientIpStorage /*NULL or fill field with ipv4|ipv6 adress*/, int nonBlockFlag /* 0 - if blocking 1 - if non*/) {
     struct sockaddr addr;
     unsigned int len = sizeof(addr);
-    #ifndef __WIN32
+    #ifdef _WIN32
+    int result = accept(listener, &addr, (int*)&len);
+    #else
     int flag = nonBlockFlag != 0 ? O_NONBLOCK : 0;
     int result = accept4(listener, &addr, &len, flag);
-    #else
-    int result = accept(listener, &addr, (int*)&len);
     #endif
 
     if (clientIpStorage != NULL) {
@@ -185,7 +185,10 @@ int8_t resolve_net(const char* domain, char* output, uint16_t nsType) {
     buf[2] = 0b00000001; // query | Recursion Available | 
     buf[5] = 0x01; // QDCOUNT
 
-    uint8_t domainLen = strlen(domain); // RDATA LENGTH 16 bit
+    char id[2];
+    id[0] = buf[0];
+    id[1] = buf[1];
+    uint16_t domainLen = strlen(domain); // RDATA LENGTH 16 bit
     char qname[domainLen+2]; // len byte + domain + 0x00
     uint8_t octetCounter = 0;
     for (int16_t i = domainLen-1; i>= 0; i--) { // RDATA
@@ -205,94 +208,95 @@ int8_t resolve_net(const char* domain, char* output, uint16_t nsType) {
     buf[typePos] = (nsType >> 8) & 0xFF; // set type
     buf[typePos+1] = nsType & 0xFF;
     buf[typePos+3] = 0x01;
-    int32_t conn = -1;
-    uint8_t maxDnsServerReconnect = 3;
-    for (uint8_t i = 0; i<maxDnsServerReconnect; ++i) { // x attempts
-        conn = connect_net(dnsIP, "53", setUDP | setIPv4);
-        
-        // set recv timeout
-        #ifdef _WIN32
-        DWORD timeout = 2500; // milliseconds
-        setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof timeout);
-        #else
-        struct timeval tv;
-        tv.tv_sec = 2; // seconds
-        tv.tv_usec = 500; // milliseconds
-        setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
-        #endif
 
-        send_net(conn, buf, typePos+4);
-        memset(buf, 0, 512);
-        if (recv_net(conn, buf, 512) < 1) { // net error while receiving a response
-            close_net(conn);
-            if (i == maxDnsServerReconnect - 1) {
-                strcpy(output, "Net error");
-                return -1;
-            }
-        } else {
-            break;
-        }
+    struct sockaddr_in servaddr;
+    memset(&servaddr, 0, sizeof(servaddr));
+
+    int conn = connect_net(dnsIP, "53", setUDP | setIPv4);
+
+    #ifdef _WIN32
+    DWORD timeout = 3800; // milliseconds
+    setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof timeout);
+    #else
+    struct timeval tv;
+    tv.tv_sec = 3; // seconds
+    tv.tv_usec = 800; // milliseconds
+    setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+    #endif
+    send_net(conn, buf, typePos+4);
+    memset(buf, 0, 512);
+    int recieved = recv_net(conn, buf, 512);
+    if (recieved < 10) { // net error while receiving a response
+        close_net(conn);
+        strcpy(output, "Net error");
+        return -1;
     }
-    uint16_t answerCount = (buf[6] << 8) | (buf[7]); // 4 and 5 bytes from HEADER
+    uint16_t answerCount = ((buf[6] << 8) | (buf[7])); // 6 and 7 bytes from HEADER
     if (answerCount == 0) { // no results
         strcpy(output, "No results");
         close_net(conn);
         return -2;
     }
     output[0] = 0;
-    uint16_t answStart = 12 + domainLen + 2 + 4; // header(12) + QName + QTYPEQCLASS(4) | header + question
+    int16_t answStart = 12 + ((2+domainLen) + (2 + 2));
     for (uint8_t v = 0; v<answerCount; v++) {
-        // answStart + 0  | 2b NAME pointer
-        // answStart + 2  | 2b Dns type
-        // answStart + 4  | 2b Class
-        // answStart + 6  | 4b TTL
-        // answStart + 10 | 2b RDATA len
-        // answStart + 12 | xb RDATA
-        uint16_t rdatalen = (buf[answStart+10] << 8) | (buf[answStart+11]);
+        if (buf[answStart] & 0xC0) { // + name in Resource record format
+            // ptr, not name
+            answStart += 2;
+        } else {
+            for (; buf[answStart] != 0; ++answStart) {}
+            ++answStart;
+        }
+        // answStart + 0  | 2b Dns type
+        // answStart + 2  | 2b Class
+        // answStart + 4  | 4b TTL
+        // answStart + 8  | 2b RDATA len
+        // answStart + 10 | xb RDATA
+        uint16_t rdatalen = ((buf[answStart+8] << 8) | (buf[answStart+9]));
         uint16_t outputLen = strlen(output);
-        if (outputLen != 0) {output[outputLen] = ';'; outputLen++; output[outputLen] = 0;}
+        if (outputLen != 0) {output[outputLen] = ';'; ++outputLen; output[outputLen] = 0;}
         if (nsType == dnsA) { // A
-            if ((buf[answStart+2] << 8 | (buf[answStart+3]) == nsType)) {
+            if ((buf[answStart] << 8) | (buf[answStart+1]) == nsType) {
                 char ipbytes[5] = "";
-                uint16_t ipIndex = answStart+12;
-                ipbytes[0] = buf[ipIndex];
-                ipbytes[1] = buf[ipIndex+1];
-                ipbytes[2] = buf[ipIndex+2];
-                ipbytes[3] = buf[ipIndex+3];
+                uint8_t sub = answStart + 10;
+                ipbytes[0] = buf[sub];
+                ipbytes[1] = buf[sub+1];
+                ipbytes[2] = buf[sub+2];
+                ipbytes[3] = buf[sub+3];
                 inet_ntop(AF_INET, ipbytes, output+outputLen, INET_ADDRSTRLEN);
             }
         } else if (nsType == dnsMX) { // MX
             uint16_t outputInd = strlen(output);
-            itos((buf[answStart+12] << 8) | (buf[answStart+13] & 0xFF), output+outputInd); // priority
+            itos((buf[answStart+10] << 8) | (buf[answStart+11] & 0xFF), output+outputInd); // priority
             outputInd = strlen(output);
             output[outputInd] = ' ';
             outputInd++;
-            uint8_t lblLen = buf[answStart+14];
+            uint8_t lblLen = buf[answStart+12];
             int32_t i=0;
             while(1) {
                 for(uint8_t u = 0;u<lblLen;u++) {
-                    output[outputInd+i] = buf[answStart+15+i];
+                    output[outputInd+i] = buf[answStart+13+i];
                     i++;
                 }
-                lblLen = buf[answStart+15+i];
+                lblLen = buf[answStart+13+i];
                 if (lblLen == 0) {break;}
                 output[outputInd+i] = '.';
                 i++;
             }
             output[outputInd+i] = 0;
         } else if (nsType == dnsCAA) { // CAA
-            itos(buf[answStart+12], output); // flags
+            itos(buf[answStart+10], output); // flags
             uint32_t outputInd = strlen(output);
             output[outputInd] = ' ';
             outputInd++;
-            uint8_t tagSize = buf[answStart+13];
+            uint8_t tagSize = buf[answStart+11];
             for (uint8_t i=0;i<tagSize;i++) { // issue
-                output[outputInd] = buf[answStart+14+i];
+                output[outputInd] = buf[answStart+12+i];
                 outputInd++;
             }
             output[outputInd] = ' ';
             outputInd++;
-            answStart += 14+tagSize;
+            answStart += 12+tagSize;
             uint8_t lblLen = buf[answStart];
             int32_t i=0;
             while(1) {
@@ -306,24 +310,24 @@ int8_t resolve_net(const char* domain, char* output, uint16_t nsType) {
                 i++;
             }
         } else if (nsType == dnsSRV) { // SRV
-            itos((buf[answStart+12] << 8) | (buf[answStart+13] & 0xFF), output); // priority
+            itos((buf[answStart+10] << 8) | (buf[answStart+11] & 0xFF), output); // priority
             uint16_t outputInd = strlen(output);
             output[outputInd] = ' ';
-            itos((buf[answStart+14] << 8) | (buf[answStart+15] & 0xFF), output+outputInd+1); // weight
+            itos((buf[answStart+12] << 8) | (buf[answStart+13] & 0xFF), output+outputInd+1); // weight
             outputInd = strlen(output);
             output[outputInd] = ' ';
-            itos((buf[answStart+16] << 8) | (buf[answStart+17] & 0xFF), output+outputInd+1); // port
+            itos((buf[answStart+14] << 8) | (buf[answStart+15] & 0xFF), output+outputInd+1); // port
             outputInd = strlen(output);
             output[outputInd] = ' ';
             outputInd++;
-            uint8_t lblLen = buf[answStart+18];
+            uint8_t lblLen = buf[answStart+16];
             int32_t i=0;
             while(1) {
                 for(uint8_t u = 0;u<lblLen;u++) {
-                    output[outputInd+i] = buf[answStart+19+i];
+                    output[outputInd+i] = buf[answStart+17+i];
                     i++;
                 }
-                lblLen = buf[answStart+19+i];
+                lblLen = buf[answStart+17+i];
                 if (lblLen == 0) {break;}
                 output[outputInd+i] = '.';
                 i++;
@@ -331,11 +335,11 @@ int8_t resolve_net(const char* domain, char* output, uint16_t nsType) {
         } else if (nsType == dnsCNAME) { // CNAME
             uint16_t outputInd = strlen(output);
             int i = 0, j = 0;
-            while (buf[answStart+12+i] != 0) {
-                int length = buf[answStart+12+i];
+            while (buf[answStart+10+i] != 0) {
+                int length = buf[answStart+10+i];
                 i++;
                 for (int k = 0; k < length; k++) {
-                    output[outputInd+(j++)] = buf[answStart+12+(i++)];
+                    output[outputInd+(j++)] = buf[answStart+10+(i++)];
                 }
                 output[outputInd+(j++)] = '.';
             }
@@ -344,12 +348,12 @@ int8_t resolve_net(const char* domain, char* output, uint16_t nsType) {
             uint16_t e = 0;
             char rdata[rdatalen+1];
             for (; e<rdatalen; e++) {
-                rdata[e] = buf[answStart+13+e];
+                rdata[e] = buf[answStart+11+e];
             }
             rdata[rdatalen-1] = 0;
             strcpy(output+outputLen, rdata);
         }
-        answStart += 12+rdatalen;
+        answStart += 10+rdatalen;
     }
     close_net(conn);
     return 0;

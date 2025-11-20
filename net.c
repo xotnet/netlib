@@ -65,7 +65,11 @@ int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
     return listener;
 }
 
-int32_t accept_net(int32_t listener, char* clientIpStorage /*NULL or fill field with ipv4|ipv6 adress*/, int nonBlockFlag /* 0 - if blocking 1 - if non*/) {
+int32_t accept_net(int32_t listener) {
+    return accept(listener, NULL, NULL);
+}
+
+int32_t accept_net_high(int32_t listener, char* clientIpStorage /*NULL or fill field with ipv4|ipv6 adress*/, int nonBlockFlag /* 0 - if blocking 1 - if non*/) {
     struct sockaddr addr;
     unsigned int len = sizeof(addr);
     #ifdef _WIN32
@@ -118,7 +122,7 @@ int32_t connect_net(const char* ip, const char* port, const int opt) {
 }
 
 int32_t send_net(int32_t socket, char* buf, uint32_t size) {
-    #ifdef __WIN32
+    #ifdef _WIN32
         return send(socket, buf, size, 0);
     #else
         return send(socket, buf, size, MSG_NOSIGNAL);
@@ -226,7 +230,7 @@ int8_t resolve_net(const char* domain, char* output, uint16_t nsType) {
     send_net(conn, buf, typePos+4);
     memset(buf, 0, 512);
     int recieved = recv_net(conn, buf, 512);
-    if (recieved < 10) { // net error while receiving a response
+    if (recieved < 16) { // net error while receiving a response
         close_net(conn);
         strcpy(output, "Net error");
         return -1;

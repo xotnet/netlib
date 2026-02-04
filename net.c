@@ -17,6 +17,7 @@
 
 enum options{setTCP=0b00000001, setUDP=0b00000010, setIPv4=0b00000100, setIPv6=0b00001000, setNonBlocking=0b00010000};
 static void itos(int32_t N, char* str);
+static int makeNonBlocking(int fd);
 
 // RETURN VALUE
 // int listener
@@ -55,12 +56,7 @@ int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
     }
     if (listen(listener, SOMAXCONN) == -1) {return -4;}
     if ((setNonBlocking & opt) == setNonBlocking) {
-        #ifdef _WIN32
-            unsigned long mode = 1;
-            ioctlsocket(listener, FIONBIO, &mode);
-        #else
-            fcntl(listener, F_SETFL, fcntl(listener, F_GETFL, 0) | O_NONBLOCK);
-        #endif
+        makeNonBlocking(listener);
     }
     return listener;
 }
@@ -72,12 +68,15 @@ int32_t accept_net(int32_t listener) {
 int32_t accept_net_high(int32_t listener, char* clientIpStorage /*NULL or fill field with ipv4|ipv6 adress*/, int nonBlockFlag /* 0 - if blocking 1 - if non*/) {
     struct sockaddr addr;
     unsigned int len = sizeof(addr);
-    #ifdef _WIN32
-    int result = accept(listener, &addr, (int*)&len);
-    #else
-    int flag = nonBlockFlag != 0 ? O_NONBLOCK : 0;
-    int result = accept4(listener, &addr, &len, flag);
-    #endif
+    int result = accept(listener, &addr, (unsigned int*)&len);
+
+    if (result < 0) {
+        return result;
+    }
+
+    if (nonBlockFlag == 1) {
+        makeNonBlocking(result);
+    }
 
     if (clientIpStorage != NULL) {
         if (addr.sa_family == AF_INET) {
@@ -189,9 +188,6 @@ int8_t resolve_net(const char* domain, char* output, uint16_t nsType) {
     buf[2] = 0b00000001; // query | Recursion Available | 
     buf[5] = 0x01; // QDCOUNT
 
-    char id[2];
-    id[0] = buf[0];
-    id[1] = buf[1];
     uint16_t domainLen = strlen(domain); // RDATA LENGTH 16 bit
     char qname[domainLen+2]; // len byte + domain + 0x00
     uint8_t octetCounter = 0;
@@ -260,7 +256,7 @@ int8_t resolve_net(const char* domain, char* output, uint16_t nsType) {
         uint16_t outputLen = strlen(output);
         if (outputLen != 0) {output[outputLen] = ';'; ++outputLen; output[outputLen] = 0;}
         if (nsType == dnsA) { // A
-            if ((buf[answStart] << 8) | (buf[answStart+1]) == nsType) {
+            if (((buf[answStart] << 8) | (buf[answStart+1])) == nsType) {
                 char ipbytes[5] = "";
                 uint8_t sub = answStart + 10;
                 ipbytes[0] = buf[sub];
@@ -383,6 +379,18 @@ static void itos(int32_t N, char* str) {
         str[i] = str[index - i - 1];
         str[index - i - 1] = temp;
     }
+}
+
+int makeNonBlocking(int fd) {
+    #ifdef _WIN32
+       unsigned long mode = blocking ? 0 : 1;
+       return (ioctlsocket(fd, FIONBIO, &mode) == 0);
+    #else
+       int flags = fcntl(fd, F_GETFL, 0);
+       if (flags == -1) return 0;
+       flags = flags | O_NONBLOCK;
+       return (fcntl(fd, F_SETFL, flags) == 0);
+    #endif
 }
 
 #endif

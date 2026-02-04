@@ -7,8 +7,11 @@ C/C++ multiplatform network(TCP/UDP) lib for server and client
 **listen_net**(char* ip, char* port, int options)
 > int server = listen_net("0.0.0.0", "1234", setTCP | setIPv4) - Create a TCP listener at 0.0.0.0:1234 
 
-**accept_net**(int listener, char* clientIpStorage)
-> int client = accept_net(server) - Accept client connection, if clientIpStorage != NULL save client's ip
+**accept_net**(int listener)
+> int client = accept_net(server) - Accept client connection and return client socket
+
+**accept_net_high**(int listener, char* clientIp, int nonBlocking)
+> int client = accept_net(server) - Accept client connection, if clientIpStorage != NULL save client's ip to char* | if nonBlocking 1 - client non blocking
 
 **connect_net**(char* ip, char* port, int options)
 > int socket = connect_net("1.1.1.1", "53", setUDP | setIPv4) - UDP connect to 1.1.1.1:53

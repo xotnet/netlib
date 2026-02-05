@@ -67,8 +67,8 @@ int32_t accept_net(int32_t listener) {
 
 int32_t accept_net_high(int32_t listener, char* clientIpStorage /*NULL or fill field with ipv4|ipv6 adress*/, int nonBlockFlag /* 0 - if blocking 1 - if non*/) {
     struct sockaddr addr;
-    unsigned int len = sizeof(addr);
-    int result = accept(listener, &addr, (unsigned int*)&len);
+    socklen_t len = sizeof(addr);
+    int result = accept(listener, &addr, &len);
 
     if (result < 0) {
         return result;
@@ -383,7 +383,7 @@ static void itos(int32_t N, char* str) {
 
 int makeNonBlocking(int fd) {
     #ifdef _WIN32
-       unsigned long mode = blocking ? 0 : 1;
+       unsigned long mode = 1;
        return (ioctlsocket(fd, FIONBIO, &mode) == 0);
     #else
        int flags = fcntl(fd, F_GETFL, 0);

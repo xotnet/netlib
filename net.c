@@ -21,10 +21,10 @@ static int makeNonBlocking(int fd);
 
 // RETURN VALUE
 // int listener
-// -1 TCP or UDP option not selected
 // -2 can't create system socket
 // -3 socket binding error
 // -4 listener creation error
+// -5 invalid ip
 int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
     #ifdef __WIN32
         WSADATA wsa;
@@ -33,9 +33,8 @@ int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
     int family = AF_INET;
     if ((opt & setIPv6) == setIPv6) {family = AF_INET6;}
     int32_t listener;
-    if ((setTCP & opt) == setTCP) {listener = socket(family, SOCK_STREAM, 0);}
-    else if ((setUDP & opt) == setUDP) {listener = socket(family, SOCK_DGRAM, 0);}
-    else {return -1;}
+    if ((setTCP & opt) == setUDP) {listener = socket(family, SOCK_DGRAM, 0);}
+    else {listener = socket(family, SOCK_STREAM, 0);} // TCP default
     if (listener == -1) {return -2;}
     int enable = 1;
     setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&enable, sizeof(enable));
@@ -43,7 +42,9 @@ int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
         struct sockaddr_in6 addr;
         addr.sin6_family = AF_INET6;
         addr.sin6_port = htons(atoi(port));
-        inet_pton(AF_INET6, ip, (void*)&addr.sin6_addr.s6_addr);
+        if (inet_pton(AF_INET6, ip, (void*)&addr.sin6_addr.s6_addr) != 1) {
+            return -5;
+        }
         addr.sin6_scope_id = 0;
         if (bind(listener, (struct sockaddr*)&addr, sizeof(addr)) == -1) {return -3;}
     }
@@ -51,7 +52,9 @@ int32_t listen_net(const char* ip, const char* port, const int32_t opt) {
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
         addr.sin_port = htons(atoi(port));
-        inet_pton(AF_INET, ip, (void*)&addr.sin_addr.s_addr);
+        if (inet_pton(AF_INET, ip, (void*)&addr.sin_addr.s_addr) != 1) {
+            return -5;
+        }
         if (bind(listener, (struct sockaddr*)&addr, sizeof(addr)) == -1) {return -3;}
     }
     if (listen(listener, SOMAXCONN) == -1) {return -4;}
@@ -92,6 +95,7 @@ int32_t accept_net_high(int32_t listener, char* clientIpStorage /*NULL or fill f
 // int connected socket
 // -1 can't create system socket
 // -2 connection interrupted
+// -3 invalid ip
 int32_t connect_net(const char* ip, const char* port, const int opt) {
     #ifdef __WIN32
         WSADATA wsa;
@@ -100,14 +104,16 @@ int32_t connect_net(const char* ip, const char* port, const int opt) {
     int family = AF_INET;
     if ((opt & setIPv6) == setIPv6) {family = AF_INET6;}
     int32_t conn = 0;
-    if ((setTCP & opt) == setTCP) {conn = socket(family, SOCK_STREAM, 0);}
-    else if ((setUDP & opt) == setUDP) {conn = socket(family, SOCK_DGRAM, 0);}
+    if ((setUDP & opt) == setUDP) {conn = socket(family, SOCK_DGRAM, 0);}
+    else {conn = socket(family, SOCK_STREAM, 0);}
     if (conn == -1) {return -1;}
     if ((opt & setIPv6) == setIPv6) {
         struct sockaddr_in6 addr;
         addr.sin6_family = AF_INET6;
         addr.sin6_port = htons(atoi(port));
-        inet_pton(AF_INET6, ip, (void*)&addr.sin6_addr.s6_addr);
+        if (inet_pton(AF_INET6, ip, (void*)&addr.sin6_addr.s6_addr) != 1) {
+            return -3;
+        }
         addr.sin6_scope_id = 0;
         if (connect(conn, (struct sockaddr*)&addr, sizeof(addr)) == -1) {return -2;}
     } else { // v4
